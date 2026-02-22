@@ -26,9 +26,10 @@ MedMap AI accepts prescription images — including messy, overlapping, or handw
 ```mermaid
 graph TD
     A[Frontend React + Vite] -->|Image/Text| B[Express Backend]
-    B --> C{5-Pass OCR Engine}
+    B --> C{Hybrid OCR Engine}
     C -->|Tesseract.js| D[Consensus Logic]
-    C -->|GPT-4o Vision| D
+    C -->|OpenCV Preprocess| D
+    C -->|Sarvam/GPT-4o Vision| D
     D --> E[OpenAI GPT-4o NER]
     E -->|JSON Mode| F[4-Stage Matching Engine]
     F -->|Exact/Fuzzy/Vector| G[(Supabase DB)]
@@ -46,7 +47,7 @@ graph TD
 | **Backend** | Node.js 25 + Express (ESM)                   |
 | **Database**| Supabase (PostgreSQL + pgvector + pg_trgm)   |
 | **AI Models**| OpenAI GPT-4o (Vision + NER) + Text-3-Small |
-| **OCR**     | Tesseract.js Premium Multi-Pass Consensus    |
+| **OCR**     | Tesseract.js + optional OpenCV + Sarvam/GPT fallback |
 
 ## 🏁 Setup & Execution
 
@@ -58,6 +59,11 @@ cd backend && npm install
 cd ../frontend && npm install
 ```
 *Create `backend/.env` with `OPENAI_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SERVICE_KEY`.*
+
+Optional (recommended for better handwritten OCR preprocessing):
+```bash
+python3 -m pip install -r backend/requirements-ocr.txt
+```
 
 ### 2. Initialize Data
 ```bash
@@ -85,7 +91,7 @@ cd frontend && npm run dev
 
 ## 📊 Project Status
 - **Database Size**: ~254,000+ records.
-- **OCR Engine**: 5-Pass Parallel Vision Logic.
+- **OCR Engine**: Dynamic multi-pass pipeline (Sharp + optional OpenCV).
 - **Verification**: Multi-Source Real-World Lookup (OpenFDA/RxNorm/OpenAI).
 - **UI State**: V2.0 (Premium).
 
