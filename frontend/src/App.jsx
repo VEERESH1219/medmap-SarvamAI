@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import UploadZone from './components/UploadZone';
 import PipelineStepper from './components/PipelineStepper';
 import OCRPassDebugger from './components/OCRPassDebugger';
@@ -6,7 +6,8 @@ import ResultCard from './components/ResultCard';
 import JsonInspector from './components/JsonInspector';
 import PrescriptionTextViewer from './components/PrescriptionTextViewer';
 
-const API_URL = '/api/process-prescription';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const API_URL = `${API_BASE_URL}/api/process-prescription`;
 
 const PHASE_STEPS = {
   idle: 0,
@@ -19,21 +20,56 @@ const PHASE_STEPS = {
   error: 0,
 };
 
+const PHASE_LABELS = {
+  idle: 'Ready for a new analysis',
+  uploading: 'Preparing request payload',
+  preprocessing: 'Running image preprocessing',
+  ocr: 'Extracting prescription text',
+  nlp: 'Structuring clinical entities',
+  matching: 'Matching against medicine index',
+  done: 'Analysis completed',
+  error: 'Analysis failed',
+};
+
 export default function App() {
   const [phase, setPhase] = useState('idle');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [lastInput, setLastInput] = useState(null);
+
+  const activeRequestRef = useRef(null);
+
+  const isProcessing = !['idle', 'done', 'error'].includes(phase);
+
+  const stats = useMemo(() => {
+    const medicines = result?.extracted_medicines || [];
+    const matched = medicines.filter((item) => item?.matched_medicine).length;
+
+    return {
+      total: medicines.length,
+      matched,
+      unresolved: medicines.length - matched,
+    };
+  }, [result]);
 
   const runPipeline = async (input) => {
+    if (activeRequestRef.current) {
+      activeRequestRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
+
     setError(null);
     setResult(null);
+    setLastInput(input);
 
     try {
       setPhase('uploading');
-      await delay(400);
+      await waitWithAbort(250, controller.signal);
 
       setPhase('preprocessing');
-      await delay(600);
+      await waitWithAbort(300, controller.signal);
 
       setPhase('ocr');
 
@@ -50,268 +86,271 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
 
-      const data = await response.json();
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
 
       if (!response.ok) {
-        throw new Error(data.message || data.suggestion || 'Processing failed.');
+        throw new Error(data?.message || data?.suggestion || `Request failed (${response.status})`);
       }
 
       setPhase('nlp');
-      await delay(500);
+      await waitWithAbort(240, controller.signal);
 
       setPhase('matching');
-      await delay(400);
+      await waitWithAbort(240, controller.signal);
 
       setResult(data);
       setPhase('done');
     } catch (err) {
+      if (err.name === 'AbortError') {
+        setPhase('idle');
+        return;
+      }
+
       console.error('[Pipeline Error]', err);
       setError(err.message || 'An unexpected error occurred.');
       setPhase('error');
+    } finally {
+      if (activeRequestRef.current === controller) {
+        activeRequestRef.current = null;
+      }
     }
   };
 
+  const cancelPipeline = () => {
+    activeRequestRef.current?.abort();
+  };
+
+  const retryLastInput = () => {
+    if (!lastInput) return;
+    runPipeline(lastInput);
+  };
+
   const reset = () => {
+    activeRequestRef.current?.abort();
     setPhase('idle');
     setResult(null);
     setError(null);
   };
 
-  const isProcessing = !['idle', 'done', 'error'].includes(phase);
-
   return (
-    <div className="min-h-screen relative flex flex-col body-font">
-      {/* ── Background Elements ─────────────────── */}
-      <div className="bg-mesh" />
-      <div className="bg-grid" />
+    <div className="min-h-screen app-background body-font text-slate-900">
+      <div className="app-glow app-glow-left" aria-hidden="true" />
+      <div className="app-glow app-glow-right" aria-hidden="true" />
 
-      {/* ── Header ──────────────────────────────── */}
-      <header className="sticky top-0 z-50 w-full glass-panel border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4 group cursor-pointer" onClick={reset}>
-            <div className="relative">
-              <div className="absolute inset-0 bg-cyan-500/20 blur-lg rounded-full animate-pulse" />
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-500
-                flex items-center justify-center text-slate-950 font-black text-xl display-font shadow-lg shadow-cyan-500/20 relative">
-                M
-              </div>
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold text-white display-font tracking-tight">
-                MedMap <span className="text-cyan-400">AI</span>
-              </h1>
-              <p className="text-[10px] text-slate-400 mono-font tracking-widest uppercase">
-                Intelligent Analysis
-              </p>
-            </div>
+      <header className="app-header sticky top-0 z-40">
+        <div className="app-container px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.24em] text-teal-700/80 font-semibold">Medical OCR + Matching</p>
+            <h1 className="display-font text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">MedMap AI</h1>
           </div>
 
-          <div className="flex items-center gap-6">
-            <nav className="hidden md:flex items-center gap-8 mr-4">
-              {['Dashboard', 'History', 'Medicines', 'Settings'].map(item => (
-                <a key={item} href="#" className="text-xs font-semibold text-slate-400 hover:text-cyan-400 transition-colors uppercase tracking-widest">
-                  {item}
-                </a>
-              ))}
-            </nav>
-            {phase === 'done' && (
-              <button
-                onClick={reset}
-                className="px-5 py-2 rounded-full glass-panel text-xs font-bold
-                  text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/10
-                  transition-all active:scale-95 shadow-lg shadow-cyan-500/5"
-              >
-                + New Analysis
+          <div className="flex items-center gap-3">
+            <span className="hidden md:inline-flex status-chip">
+              {PHASE_LABELS[phase]}
+            </span>
+
+            {isProcessing && (
+              <button onClick={cancelPipeline} className="btn-danger" type="button">
+                Cancel Run
+              </button>
+            )}
+
+            {!isProcessing && phase !== 'idle' && (
+              <button onClick={reset} className="btn-secondary" type="button">
+                New Analysis
               </button>
             )}
           </div>
         </div>
       </header>
 
-      {/* ── Main Content ────────────────────────── */}
-      <main className="flex-1 flex flex-col items-center justify-start px-6 py-12 md:py-20 relative z-10">
-
-        {/* IDLE — Show upload zone */}
+      <main className="app-container px-4 sm:px-6 py-8 sm:py-10 space-y-8">
         {phase === 'idle' && (
-          <div className="w-full max-w-3xl text-center animate-fade-in-up">
-            <div className="mb-12">
-              <span className="px-4 py-1.5 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-bold tracking-[0.2em] uppercase border border-cyan-500/20 mb-6 inline-block">
-                Powered by GPT-4o Vision
-              </span>
-              <h2 className="text-5xl md:text-6xl font-black text-white display-font mb-6 tracking-tight leading-tight">
-                Understand your <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-400 to-purple-400">Prescriptions</span> instantly.
-              </h2>
-              <p className="text-lg text-slate-400 max-w-xl mx-auto leading-relaxed">
-                Upload image, extract names, and match with our database of 250k+ medicines.
-              </p>
-            </div>
-
-            <div className="relative group p-1 rounded-[2.2rem] bg-gradient-to-r from-cyan-500/20 via-purple-500/20 to-indigo-500/20 max-w-2xl mx-auto">
-              <UploadZone onSubmit={runPipeline} disabled={false} />
-            </div>
-
-            <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto opacity-50">
-              {[
-                { label: 'Medicines', val: '250K+' },
-                { label: 'Confidence', val: '95%' },
-                { label: 'Time', val: '< 2s' },
-                { label: 'Model', val: 'GPT-4o' }
-              ].map(stat => (
-                <div key={stat.label} className="text-center">
-                  <div className="text-xl font-bold text-white display-font">{stat.val}</div>
-                  <div className="text-[10px] uppercase tracking-widest text-slate-500">{stat.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* PROCESSING ────────────────────────────── */}
-        {isProcessing && (
-          <div className="w-full flex flex-col items-center mt-20 animate-fade-in-up">
-            <div className="w-full max-w-3xl glass-panel p-10 rounded-3xl relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-500 animate-glow" />
-              <PipelineStepper currentStep={PHASE_STEPS[phase]} />
-              <div className="mt-12 text-center text-slate-400 text-sm mono-font flex items-center justify-center gap-3">
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce" />
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce [animation-delay:0.2s]" />
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce [animation-delay:0.4s]" />
-                </div>
-                Analyzing data patterns...
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ERROR ─────────────────────────────────── */}
-        {phase === 'error' && (
-          <div className="w-full max-w-2xl animate-fade-in-up mt-10">
-            <div className="glass-panel border-red-500/20 p-10 rounded-3xl text-center">
-              <div className="w-20 h-20 rounded-2xl bg-red-500/10 flex items-center justify-center mx-auto mb-6">
-                <span className="text-4xl">⚠️</span>
-              </div>
-              <h3 className="text-2xl font-bold text-red-500 display-font mb-4">
-                Analysis Interrupted
-              </h3>
-              <p className="text-slate-400 leading-relaxed mb-8 max-w-md mx-auto">{error}</p>
-              <button
-                onClick={reset}
-                className="btn-primary px-10 py-4 rounded-2xl text-base"
-              >
-                Back to Upload
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* DONE — Show results ────────────────────── */}
-        {phase === 'done' && result && (
-          <div className="w-full max-w-6xl space-y-8 animate-fade-in-up">
-            <div className="flex flex-col md:flex-row gap-8 items-start">
-
-              {/* Left Column: Debug & Text */}
-              <div className="w-full md:w-1/3 space-y-6">
-                <div className="glass-panel p-6 rounded-2xl">
-                  <h4 className="text-[10px] uppercase tracking-[0.2em] text-cyan-400 font-bold mb-4">OCR Consensus</h4>
-                  <OCRPassDebugger ocrResult={result?.ocr_result} compact={true} />
-                </div>
-                <div className="glass-panel p-6 rounded-2xl">
-                  <h4 className="text-[10px] uppercase tracking-[0.2em] text-indigo-400 font-bold mb-4">Prescription Text</h4>
-                  <PrescriptionTextViewer text={result?.ocr_result?.final_text} />
-                </div>
-                <div className="glass-panel p-6 rounded-2xl">
-                  <h4 className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-4">Raw Metadata</h4>
-                  <JsonInspector data={result} />
-                </div>
-              </div>
-
-              {/* Right Column: Matched List */}
-              <div className="flex-1 space-y-6">
-                {/* --- DIAGNOSIS BANNER --- */}
-                {result.medical_condition && (
-                  <div className="glass-panel p-8 rounded-3xl border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 via-indigo-500/5 to-transparent relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-32 h-full bg-cyan-500/5 blur-3xl rounded-full" />
-                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                      <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-2xl shadow-lg border border-cyan-500/20">
-                          🩺
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black text-cyan-500 uppercase tracking-[0.3em] mb-1.5 display-font">Prescription Diagnosis</p>
-                          <h2 className="text-2xl md:text-3xl font-black text-white display-font tracking-tight">
-                            {result.medical_condition}
-                          </h2>
-                        </div>
-                      </div>
-                      <div className="hidden lg:block px-4 py-2 rounded-xl bg-white/5 border border-white/10">
-                        <p className="text-[9px] text-slate-500 mono-font uppercase tracking-widest text-right mb-1">AI Analytical Confidence</p>
-                        <div className="flex items-center gap-2">
-                          <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                            <div className="h-full bg-cyan-500 w-[94%]" />
-                          </div>
-                          <span className="text-[10px] font-bold text-cyan-400">94%</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-white display-font flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-sm">💊</span>
-                    Detected Medicines
-                  </h3>
-                  <span className="text-[10px] mono-font text-slate-500 bg-slate-800/50 px-3 py-1 rounded-full border border-white/5">
-                    Analyzed in {result.processing_time_ms}ms
+          <section className="space-y-6 animate-enter">
+            <article className="panel p-6 sm:p-8 lg:p-10">
+              <div className="grid lg:grid-cols-[1.2fr_0.8fr] gap-8 items-start">
+                <div>
+                  <span className="inline-flex items-center rounded-full bg-teal-100 text-teal-700 px-3 py-1 text-xs font-semibold tracking-wide">
+                    Frontend-only analysis workflow
                   </span>
+                  <h2 className="display-font mt-4 text-3xl sm:text-4xl lg:text-5xl leading-tight font-bold text-slate-900">
+                    Upload a prescription and get structured medicine matches.
+                  </h2>
+                  <p className="mt-4 text-slate-600 max-w-2xl text-sm sm:text-base leading-relaxed">
+                    The interface adapts based on current pipeline state, removes non-functional controls, and only shows actions you can actually trigger.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <InfoTile label="Indexed Medicines" value="250K+" />
+                  <InfoTile label="OCR Passes" value="5" />
+                  <InfoTile label="Consensus Min" value="3" />
+                  <InfoTile label="Payload" value="Image/Text" />
+                </div>
+              </div>
+            </article>
+
+            <article className="panel p-4 sm:p-6 lg:p-8">
+              <UploadZone onSubmit={runPipeline} disabled={isProcessing} />
+            </article>
+          </section>
+        )}
+
+        {isProcessing && (
+          <section className="panel p-5 sm:p-8 animate-enter">
+            <PipelineStepper currentStep={PHASE_STEPS[phase]} />
+          </section>
+        )}
+
+        {phase === 'error' && (
+          <section className="panel p-6 sm:p-8 animate-enter">
+            <div className="max-w-2xl space-y-6">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-rose-700 font-semibold">Pipeline Error</p>
+                <h2 className="display-font text-2xl sm:text-3xl font-bold text-slate-900 mt-1">Analysis could not be completed</h2>
+                <p className="mt-3 text-slate-700 leading-relaxed text-sm sm:text-base">{error}</p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={retryLastInput}
+                  disabled={!lastInput}
+                >
+                  Retry Last Input
+                </button>
+                <button type="button" className="btn-secondary" onClick={reset}>
+                  Start Over
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {phase === 'done' && result && (
+          <section className="space-y-6 animate-enter">
+            <div className="grid lg:grid-cols-[1.4fr_1fr] gap-4">
+              <article className="panel p-5 sm:p-6">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 font-semibold">Clinical Summary</p>
+                <h2 className="display-font text-2xl sm:text-3xl font-bold text-slate-900 mt-1">
+                  {result.medical_condition || 'Condition not inferred'}
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Completed in {result.processing_time_ms || 'N/A'} ms.
+                </p>
+              </article>
+
+              <article className="panel p-5 sm:p-6">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 font-semibold">Extraction Stats</p>
+                <div className="mt-4 grid grid-cols-3 gap-3">
+                  <MetricCard label="Detected" value={stats.total} />
+                  <MetricCard label="Matched" value={stats.matched} />
+                  <MetricCard label="Review" value={stats.unresolved} />
+                </div>
+              </article>
+            </div>
+
+            <div className="grid xl:grid-cols-[320px_1fr] gap-6 items-start">
+              <aside className="space-y-4 xl:sticky xl:top-28">
+                <article className="panel p-4 sm:p-5">
+                  <h3 className="section-label">OCR Consensus</h3>
+                  <OCRPassDebugger ocrResult={result?.ocr_result} compact={true} />
+                </article>
+
+                <article className="panel p-4 sm:p-5">
+                  <h3 className="section-label">Prescription Text</h3>
+                  <PrescriptionTextViewer text={result?.ocr_result?.final_text} />
+                </article>
+
+                <article className="panel p-4 sm:p-5">
+                  <h3 className="section-label">Raw Metadata</h3>
+                  <JsonInspector data={result} />
+                </article>
+              </aside>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="display-font text-xl sm:text-2xl font-bold text-slate-900">Detected Medicines</h3>
+                  <span className="status-chip">{stats.total} entries</span>
                 </div>
 
                 {result.extracted_medicines?.length > 0 ? (
                   <div className="space-y-4">
-                    {result.extracted_medicines.map((ext, idx) => (
-                      <ResultCard key={idx} extraction={ext} index={idx} />
+                    {result.extracted_medicines.map((extraction, index) => (
+                      <ResultCard key={index} extraction={extraction} index={index} />
                     ))}
                   </div>
                 ) : (
-                  <div className="glass-panel py-20 rounded-3xl text-center border-dashed">
-                    <p className="text-slate-400 display-font font-semibold text-xl">
-                      No medicines detected
+                  <article className="panel p-8 text-center">
+                    <h4 className="display-font text-xl font-bold text-slate-900">No medicines detected</h4>
+                    <p className="text-slate-600 mt-2 text-sm">
+                      {result.suggestion || 'Try a clearer image or provide clean prescription text.'}
                     </p>
-                    <p className="text-sm text-slate-600 mono-font mt-2">
-                      {result.suggestion || 'Try a clearer image or handwritten text.'}
-                    </p>
-                    <button onClick={reset} className="mt-8 text-cyan-400 text-sm font-bold border-b border-cyan-400/30 hover:border-cyan-400 transition-all">
-                      Try New Scan
-                    </button>
-                  </div>
+                  </article>
                 )}
               </div>
             </div>
-          </div>
+          </section>
         )}
       </main>
 
-      {/* ── Footer ──────────────────────────────── */}
-      <footer className="w-full border-t border-white/5 py-8 relative z-10">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-[10px] text-slate-500 mono-font uppercase tracking-widest">
-            MedMap AI Framework v2.0 — Secure Medical Processing
-          </p>
-          <div className="flex gap-6">
-            {['Privacy', 'Security', 'Models'].map(l => (
-              <a key={l} href="#" className="text-[10px] text-slate-600 hover:text-slate-400 mono-font transition-colors">{l}</a>
-            ))}
-          </div>
-        </div>
+      <footer className="app-container px-4 sm:px-6 pb-8 pt-2">
+        <p className="text-xs text-slate-500">
+          MedMap AI frontend. Controls shown are context-aware and actionable.
+        </p>
       </footer>
     </div>
   );
 }
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function InfoTile({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold">{label}</p>
+      <p className="display-font text-xl font-bold text-slate-900 mt-1">{value}</p>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+      <p className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">{label}</p>
+      <p className="display-font text-xl font-bold text-slate-900 mt-1">{value}</p>
+    </div>
+  );
+}
+
+function waitWithAbort(ms, signal) {
+  if (signal?.aborted) {
+    throwAbortError();
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function throwAbortError() {
+  throw new DOMException('The operation was aborted.', 'AbortError');
 }

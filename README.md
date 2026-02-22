@@ -129,6 +129,13 @@ SARVAM_OCR_START_RETRY_DELAY_MS=1200
 SARVAM_OCR_RETRY_DELAY_MS=1500
 ```
 
+Frontend optional env (only needed when you want direct API URL instead of Vite proxy):
+
+```env
+# frontend/.env
+VITE_API_BASE_URL=http://localhost:3001
+```
+
 ### 3) Optional CV2 Setup (Recommended)
 ```bash
 python3 -m venv backend/.venv-ocr
@@ -171,6 +178,31 @@ npm run dev
 Notes:
 - Backend runs on `http://localhost:3001`.
 - Frontend usually runs on `http://localhost:5173` (or next free port like `5174`).
+
+## Deploy On Render
+
+This repo includes `render.yaml` for Blueprint deploy with 2 services:
+- `medmap-ai-backend` (Node web service)
+- `medmap-ai-frontend` (static site)
+
+### Steps
+1. Push latest code to GitHub.
+2. In Render dashboard, select `New +` -> `Blueprint`.
+3. Connect this repository and deploy.
+4. Set required secrets in Render:
+   - Backend service:
+     - `OPENAI_API_KEY`
+     - `SARVAM_API_KEY` (recommended)
+     - `SUPABASE_URL`
+     - `SUPABASE_SERVICE_KEY`
+     - `FRONTEND_URL` = deployed frontend URL (for CORS)
+   - Frontend static site:
+     - `VITE_API_BASE_URL` = deployed backend URL (for API calls)
+
+### Important
+- `OCR_ENABLE_CV2` is set to `false` in `render.yaml` by default for reliability on Render.
+- If you later add CV2 runtime support in Render, you can turn it on.
+- After custom domain setup, update both `FRONTEND_URL` and `VITE_API_BASE_URL`.
 
 ## Batch OCR Test (Dev)
 

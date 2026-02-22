@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: medmap-ai-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: OCR_ENABLE_CV2
+        value: "false"
+
+  - type: static_site
+    name: medmap-ai-frontend
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: VITE_API_BASE_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
