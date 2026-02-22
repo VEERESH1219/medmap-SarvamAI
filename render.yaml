@@ -20,8 +20,28 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: OCR_MIN_CONSENSUS_PASSES
+        value: "3"
+      - key: OCR_MIN_CONFIDENCE_SCORE
+        value: "40"
       - key: OCR_ENABLE_CV2
         value: "false"
+      - key: SARVAM_OCR_LANGUAGE
+        value: "en-IN"
+      - key: SARVAM_OCR_TIMEOUT_MS
+        value: "35000"
+      - key: SARVAM_OCR_POLL_MS
+        value: "1200"
+      - key: SARVAM_OCR_MAX_ATTEMPTS
+        value: "2"
+      - key: SARVAM_OCR_TIMEOUT_BACKOFF_MS
+        value: "10000"
+      - key: SARVAM_OCR_START_RETRIES
+        value: "5"
+      - key: SARVAM_OCR_START_RETRY_DELAY_MS
+        value: "1200"
+      - key: SARVAM_OCR_RETRY_DELAY_MS
+        value: "1500"
 
   - type: static_site
     name: medmap-ai-frontend
