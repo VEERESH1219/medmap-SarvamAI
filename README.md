@@ -60,6 +60,29 @@ graph TD
 | NLP | OpenAI GPT-4o |
 | Database | Supabase (PostgreSQL, `pgvector`, `pg_trgm`) |
 
+## Requirements To Run Website
+
+### Mandatory
+- OS: macOS/Linux/WSL (Windows via WSL recommended)
+- Node.js (LTS or newer; tested on Node 25)
+- npm (comes with Node)
+- Supabase project with required schema/functions
+- `OPENAI_API_KEY` (NLP + vision fallback)
+- `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`
+- Internet access (OpenAI + external fallback services)
+
+### Strongly Recommended
+- `SARVAM_API_KEY` for primary OCR fallback on hard handwritten images
+
+### Optional (for better OCR preprocessing)
+- Python 3
+- `venv` and `pip`
+- OpenCV + NumPy (`requirements.txt`, see Python section)
+
+### Required Local Ports
+- `3001` for backend API
+- `5173` (or next free Vite port like `5174`) for frontend
+
 ## Setup
 
 ### 1) Install Dependencies
@@ -109,7 +132,7 @@ SARVAM_OCR_RETRY_DELAY_MS=1500
 ### 3) Optional CV2 Setup (Recommended)
 ```bash
 python3 -m venv backend/.venv-ocr
-backend/.venv-ocr/bin/python -m pip install -r backend/requirements-ocr.txt
+backend/.venv-ocr/bin/python -m pip install -r requirements.txt
 ```
 
 Then point backend to that interpreter:

@@ -1,0 +1,57 @@
+# MedMap AI — Unified project requirements (single file)
+#
+# This file documents everything needed to run the full project.
+# Python dependencies below are pip-installable.
+#
+# ---------------------------------------------------------------------------
+# SYSTEM REQUIREMENTS
+# ---------------------------------------------------------------------------
+# - Node.js: 20+ (project tested on Node 25)
+# - npm: 10+
+# - Python: 3.10+ (for optional CV2 OCR)
+# - Supabase project (PostgreSQL + pgvector + pg_trgm)
+# - API keys: OPENAI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
+# - Recommended: SARVAM_API_KEY
+#
+# ---------------------------------------------------------------------------
+# BACKEND NPM DEPENDENCIES (install via: cd backend && npm install)
+# ---------------------------------------------------------------------------
+# @supabase/supabase-js@^2.97.0
+# cors@^2.8.6
+# csv-parse@^6.1.0
+# dotenv@^17.3.1
+# express@^5.2.1
+# jszip@^3.10.1
+# multer@^2.0.2
+# openai@^6.22.0
+# pdf-lib@^1.17.1
+# sharp@^0.34.5
+# tesseract.js@^7.0.0
+# nodemon@^3.1.14 (dev)
+#
+# ---------------------------------------------------------------------------
+# FRONTEND NPM DEPENDENCIES (install via: cd frontend && npm install)
+# ---------------------------------------------------------------------------
+# react@^19.2.0
+# react-dom@^19.2.0
+# @eslint/js@^9.39.1 (dev)
+# @tailwindcss/vite@^4.2.0 (dev)
+# @types/react@^19.2.7 (dev)
+# @types/react-dom@^19.2.3 (dev)
+# @vitejs/plugin-react@^5.1.1 (dev)
+# eslint@^9.39.1 (dev)
+# eslint-plugin-react-hooks@^7.0.1 (dev)
+# eslint-plugin-react-refresh@^0.4.24 (dev)
+# globals@^16.5.0 (dev)
+# tailwindcss@^4.2.0 (dev)
+# vite@^7.3.1 (dev)
+#
+# ---------------------------------------------------------------------------
+# PYTHON OCR DEPENDENCIES (optional, installable)
+# ---------------------------------------------------------------------------
+# Install:
+#   python3 -m venv backend/.venv-ocr
+#   backend/.venv-ocr/bin/python -m pip install -r requirements.txt
+
+opencv-python-headless==4.13.0.92
+numpy==2.4.2
